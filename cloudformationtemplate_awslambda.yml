@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  EmployeeTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: EmployeeTable
+      AttributeDefinitions:
+        - AttributeName: employeeid
+          AttributeType: S
+      KeySchema:
+        - AttributeName: employeeid
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  EmployeeLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: LambdaDynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  EmployeeFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: EmployeeFunction
+      Runtime: python3.8
+      Handler: index.lambda_handler
+      Role: !GetAtt EmployeeLambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref EmployeeTable
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          def lambda_handler(event, context):
+            dynamodb = boto3.resource('dynamodb')
+            table = dynamodb.Table(os.environ['DYNAMODB_TABLE'])
+
+            try:
+                # Assuming the event contains the employeeid
+                employeeid = event['employeeid']
+                response = table.get_item(
+                    Key={
+                        'employeeid': employeeid
+                    }
+                )
+                employee = response.get('Item', {})
+
+                if not employee:
+                    return {'statusCode': 404, 'body': json.dumps('Employee not found.')}
+
+                return {
+                    'statusCode': 200,
+                    'body': json.dumps(employee)
+                }
+
+            except Exception as e:
+                print(e)
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps('Error fetching employee data')
+                }
+
+
+
+
+  # Add additional resources and outputs as needed
